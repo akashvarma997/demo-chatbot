@@ -1,0 +1,44 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Beauty Chatbot</title>
+  <style>
+    body { font-family: sans-serif; max-width: 600px; margin: 40px auto; }
+    input, button { padding: 10px; font-size: 16px; margin-top: 10px; width: 100%; }
+    #chat { margin-top: 20px; }
+    .user, .bot { margin: 10px 0; padding: 10px; border-radius: 5px; }
+    .user { background: #f0f0f0; }
+    .bot { background: #d0f0ff; }
+  </style>
+</head>
+<body>
+  <h1>Beauty Product Chatbot 💬</h1>
+  <input type="text" id="userInput" placeholder="Ask me about creams, lotions, etc..." />
+  <button onclick="sendQuestion()">Ask</button>
+
+  <div id="chat"></div>
+
+  <script>
+    async function sendQuestion() {
+      const input = document.getElementById('userInput');
+      const chat = document.getElementById('chat');
+      const question = input.value.trim();
+      if (!question) return;
+
+      chat.innerHTML += `<div class="user"><strong>You:</strong> ${question}</div>`;
+      input.value = '';
+
+      const response = await fetch('/chat', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ question })
+      });
+
+      const data = await response.json();
+      chat.innerHTML += `<div class="bot"><strong>Bot:</strong> ${data.answer || "Error from server"}</div>`;
+    }
+  </script>
+</body>
+</html>
