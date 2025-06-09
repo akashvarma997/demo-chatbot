@@ -1,0 +1,4 @@
+{
+  "watch": ["server.js", "utils/", "public/"],
+  "ext": "js,json,html,css"
+}

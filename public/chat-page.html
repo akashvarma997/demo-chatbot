@@ -5,40 +5,90 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
   <title>Beauty Chatbot</title>
   <style>
-    body { font-family: sans-serif; max-width: 600px; margin: 40px auto; }
-    input, button { padding: 10px; font-size: 16px; margin-top: 10px; width: 100%; }
-    #chat { margin-top: 20px; }
-    .user, .bot { margin: 10px 0; padding: 10px; border-radius: 5px; }
-    .user { background: #f0f0f0; }
-    .bot { background: #d0f0ff; }
-  </style>
+  html, body {
+    height: 100%;
+    margin: 0;
+    padding: 0;
+  }
+</style>
+  <link rel="stylesheet" href="chat-style.css" />
 </head>
 <body>
-  <h1>Beauty Product Chatbot 💬</h1>
-  <input type="text" id="userInput" placeholder="Ask me about creams, lotions, etc..." />
-  <button onclick="sendQuestion()">Ask</button>
-
-  <div id="chat"></div>
+  <div id="chat-container">
+    <div id="chat-header">💬 Beauty Assistant</div>
+    <div id="chat-box"></div>
+    <div id="chat-input-area">
+      <input type="text" id="userInput" placeholder="Type your message..." />
+      <label id="upload-label" >📎
+        <input type="file" id="imageInput" accept="image/*" />
+      </label>
+      <button id="sendBtn">➤</button>
+      <button id="uploadBtn" style="display: none;">Upload Image</button>
+    </div>
+  </div>
 
   <script>
-    async function sendQuestion() {
-      const input = document.getElementById('userInput');
-      const chat = document.getElementById('chat');
-      const question = input.value.trim();
+    const chatBox = document.getElementById("chat-box");
+    const userInput = document.getElementById("userInput");
+    const imageInput = document.getElementById("imageInput");
+    const uploadBtn = document.getElementById("uploadBtn");
+    const sendBtn = document.getElementById("sendBtn");
+
+    function appendMessage(sender, message) {
+      const msg = document.createElement("div");
+      msg.className = `message ${sender}`;
+      msg.innerText = message;
+      chatBox.appendChild(msg);
+      chatBox.scrollTop = chatBox.scrollHeight;
+
+      const stored = JSON.parse(sessionStorage.getItem("chatHistory") || "[]");
+      stored.push({ sender, message });
+      sessionStorage.setItem("chatHistory", JSON.stringify(stored));
+    }
+
+    uploadBtn.addEventListener("click", async () => {
+      const file = imageInput.files[0];
+      if (!file) return alert("Please select an image.");
+
+      const formData = new FormData();
+      formData.append("image", file);
+
+      try {
+        const res = await fetch("/upload-image", { method: "POST", body: formData });
+        const data = await res.json();
+        if (data.success) appendMessage("bot", "✅ Image uploaded successfully.");
+        else appendMessage("bot", "❌ Failed to upload image.");
+      } catch {
+        appendMessage("bot", "❌ Server error during upload.");
+      }
+    });
+
+    sendBtn.addEventListener("click", async () => {
+      console.log("Send button clicked");
+      const question = userInput.value.trim();
       if (!question) return;
 
-      chat.innerHTML += `<div class="user"><strong>You:</strong> ${question}</div>`;
-      input.value = '';
+      appendMessage("user", question);
+      userInput.value = "";
 
-      const response = await fetch('/chat', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ question })
-      });
+      try {
+        const res = await fetch("/chat", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ question }),
+        });
+        const data = await res.json();
+        appendMessage("bot", data.answer || "🤖 No reply.");
+      } catch {
+        appendMessage("bot", "❌ Error reaching assistant.");
+      }
+    });
 
-      const data = await response.json();
-      chat.innerHTML += `<div class="bot"><strong>Bot:</strong> ${data.answer || "Error from server"}</div>`;
-    }
+    // Restore previous chat
+    window.onload = () => {
+      const history = JSON.parse(sessionStorage.getItem("chatHistory") || "[]");
+      history.forEach(({ sender, message }) => appendMessage(sender, message));
+    };
   </script>
 </body>
 </html>
