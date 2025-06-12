@@ -10,7 +10,7 @@
     margin: 0;
     padding: 0;
   }
-</style>
+  </style>
   <link rel="stylesheet" href="chat-style.css" />
 </head>
 <body>
@@ -20,19 +20,24 @@
     <div id="chat-input-area">
       <input type="text" id="userInput" placeholder="Type your message..." />
       <label id="upload-label" >📎
-        <input type="file" id="imageInput" accept="image/*" />
+        <input type="file" id="fileInput" accept="image/*,application/pdf" />
       </label>
       <button id="sendBtn">➤</button>
-      <button id="uploadBtn" style="display: none;">Upload Image</button>
     </div>
   </div>
 
   <script>
     const chatBox = document.getElementById("chat-box");
     const userInput = document.getElementById("userInput");
-    const imageInput = document.getElementById("imageInput");
-    const uploadBtn = document.getElementById("uploadBtn");
+    const fileInput = document.getElementById("fileInput");
     const sendBtn = document.getElementById("sendBtn");
+
+    // --- Refactored message handling for better history management ---
+    function saveMessageToHistory(sender, message) {
+      const stored = JSON.parse(sessionStorage.getItem("chatHistory") || "[]");
+      stored.push({ sender, message });
+      sessionStorage.setItem("chatHistory", JSON.stringify(stored));
+    }
 
     function appendMessage(sender, message) {
       const msg = document.createElement("div");
@@ -40,54 +45,154 @@
       msg.innerText = message;
       chatBox.appendChild(msg);
       chatBox.scrollTop = chatBox.scrollHeight;
-
-      const stored = JSON.parse(sessionStorage.getItem("chatHistory") || "[]");
-      stored.push({ sender, message });
-      sessionStorage.setItem("chatHistory", JSON.stringify(stored));
+      // Save all visually appended messages to history
+      saveMessageToHistory(sender, message);
     }
 
-    uploadBtn.addEventListener("click", async () => {
-      const file = imageInput.files[0];
-      if (!file) return alert("Please select an image.");
+    // --- Loader Functions ---
+    function showLoader() {
+      const loaderMessage = document.createElement("div");
+      loaderMessage.className = "message bot loader";
+      // ✨ FIXED: Use the correct HTML for the typing indicator
+      loaderMessage.innerHTML = `
+        <div class="typing-indicator">
+          <span></span>
+          <span></span>
+          <span></span>
+        </div>
+      `;
+      chatBox.appendChild(loaderMessage);
+      chatBox.scrollTop = chatBox.scrollHeight;
+    }
+
+    function hideLoader() {
+      const loader = document.querySelector(".loader");
+      if (loader) {
+        loader.remove();
+      }
+    }
+
+    // --- File Upload Logic ---
+    async function handleFileUpload() {
+      const file = fileInput.files[0];
+      if (!file) return;
+
+      showLoader();
 
       const formData = new FormData();
-      formData.append("image", file);
+      formData.append("file", file);
 
       try {
-        const res = await fetch("/upload-image", { method: "POST", body: formData });
+        const res = await fetch("/upload-file", { method: "POST", body: formData });
         const data = await res.json();
-        if (data.success) appendMessage("bot", "✅ Image uploaded successfully.");
-        else appendMessage("bot", "❌ Failed to upload image.");
-      } catch {
+        
+        if (data.success) {
+          appendMessage("bot", `✅ ${data.message || 'File uploaded successfully.'}`);
+        } else {
+          appendMessage("bot", `❌ ${data.error || 'Failed to upload file.'}`);
+        }
+      } catch (err) {
+        console.error("Upload error:", err);
         appendMessage("bot", "❌ Server error during upload.");
+      } finally {
+        hideLoader();
       }
-    });
+      
+      fileInput.value = "";
+    }
+    
+    fileInput.addEventListener("change", handleFileUpload);
 
+    // --- Send Button Logic (with Streaming) ---
     sendBtn.addEventListener("click", async () => {
-      console.log("Send button clicked");
       const question = userInput.value.trim();
       if (!question) return;
 
       appendMessage("user", question);
       userInput.value = "";
+      showLoader();
 
       try {
-        const res = await fetch("/chat", {
+        const response = await fetch("/chat", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ question }),
         });
-        const data = await res.json();
-        appendMessage("bot", data.answer || "🤖 No reply.");
-      } catch {
-        appendMessage("bot", "❌ Error reaching assistant.");
+
+        hideLoader();
+
+        const botMsgElement = document.createElement("div");
+        botMsgElement.className = "message bot";
+        botMsgElement.innerText = "";
+        chatBox.appendChild(botMsgElement);
+
+        const reader = response.body.getReader();
+        const decoder = new TextDecoder();
+        let fullResponse = "";
+        let loopDone = false;
+
+        while (!loopDone) {
+          const { value, done } = await reader.read();
+          if (done) {
+            loopDone = true;
+            break;
+          }
+
+          const chunk = decoder.decode(value);
+          const lines = chunk.split("\n");
+
+          for (const line of lines) {
+            if (line.startsWith("data: ")) {
+              const dataStr = line.substring(6);
+              if (dataStr.trim() === "[DONE]") {
+                loopDone = true;
+                break;
+              }
+              try {
+                const data = JSON.parse(dataStr);
+                const delta = data.choices[0]?.delta?.content;
+                if (delta) {
+                  fullResponse += delta;
+                  botMsgElement.innerText = fullResponse;
+                  chatBox.scrollTop = chatBox.scrollHeight;
+                }
+              } catch (e) {
+                // Ignore incomplete JSON chunks
+              }
+            }
+          }
+        }
+        
+        // ✨ FIXED: Save the final, complete response to session history
+        saveMessageToHistory("bot", fullResponse);
+
+      } catch(err) {
+          hideLoader();
+          appendMessage("bot", "❌ Error reaching assistant.");
       }
     });
+    
+    userInput.addEventListener("keydown", (event) => {
+        if (event.key === "Enter") {
+            sendBtn.click();
+        }
+    });
 
-    // Restore previous chat
+    // --- Onload Logic to Restore Chat ---
     window.onload = () => {
       const history = JSON.parse(sessionStorage.getItem("chatHistory") || "[]");
-      history.forEach(({ sender, message }) => appendMessage(sender, message));
+      // Clear storage to prevent duplicates from appendMessage
+      sessionStorage.setItem("chatHistory", "[]"); 
+      history.forEach(({ sender, message }) => {
+        // Just recreate the visual elements, don't re-save them yet
+        const msg = document.createElement("div");
+        msg.className = `message ${sender}`;
+        msg.innerText = message;
+        chatBox.appendChild(msg);
+      });
+      // Now re-save the whole original history at once.
+      sessionStorage.setItem("chatHistory", JSON.stringify(history));
+      chatBox.scrollTop = chatBox.scrollHeight;
     };
   </script>
 </body>

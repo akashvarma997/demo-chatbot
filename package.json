@@ -10,7 +10,9 @@
     "axios": "^1.6.5",
     "dotenv": "^16.3.1",
     "express": "^4.19.2",
+    "express-session": "^1.18.1",
     "multer": "^2.0.1",
+    "pdfreader": "^3.0.7",
     "xlsx": "^0.18.5"
   },
   "devDependencies": {
